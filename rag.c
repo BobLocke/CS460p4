@@ -3,8 +3,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define DEADLOCK_STATE 10 // arbitrary number to define the deadlock state. Probably should use “enum” instead
-
 typedef struct _request_queue_node {
     struct _request_queue_node *next;
     int process;
