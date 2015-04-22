@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <assert.h>
 
 typedef struct _request_queue_node {
     struct _request_queue_node *next;
@@ -117,25 +118,25 @@ void Rag_init(int m, int n)
     requested = malloc(m*sizeof(int *));
     allocated = malloc(n*sizeof(int *));
     request_queues = malloc(n*sizeof(RequestQueue *));
-    for (i = 0; i < m; i++)
+    for (int i = 0; i < m; i++)
         requested[i] = calloc(n, sizeof(int));
-    for (i = 0; i < n; i++)
+    for (int i = 0; i < n; i++)
         allocated[i] = calloc(m, sizeof(int));
-    for (i = 0; i < n; i++)
+    for (int i = 0; i < n; i++)
         request_queues[i] = request_queue_constructor();
 }
 
 void Rag_deconstruct()
 {
-    for (i = 0; i < m; i++)
+    for (int i = 0; i < m; i++)
         free(requested[i]);
     free(requested);
-    for (i = 0; i < n; i++)
+    for (int i = 0; i < n; i++)
         free(allocated[i]);
     free(allocated);
     free(processes_visited);
     free(resources_visited);
-    for (i = 0; i < n; i++)
+    for (int i = 0; i < n; i++)
         request_queue_purge(request_queues[i]);
 }
 
@@ -198,7 +199,7 @@ int Rag_process(int process_id, char request_type, int resource_id)
         case 'A':
             // find out if resource is allocated
             int resource_is_allocated = 0;
-            for (i = 0; i < number_resources; i++)
+            for (int i = 0; i < number_resources; i++)
             {
                 if (allocated[resource_id][i])
                 {
