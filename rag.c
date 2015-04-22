@@ -20,6 +20,14 @@ typedef enum {REQUEST_STATE,
               DEALLOC_STATE,
               DEADLOCK_STATE} state_t;
 
+int **requested;
+int **allocated;
+int *processes_visited;
+int *resources_visited;
+int number_processes;
+int number_resources;
+RequestQueue **request_queues;
+
 RequestQueue *request_queue_constructor()
 {
     RequestQueue *q = malloc(sizeof(RequestQueue));
@@ -51,7 +59,10 @@ int request_queue_dequeue(RequestQueue *q)
     assert(q->back);
     int process = q->back->process;
     RequestQueueNode *del_node = q->back;
-    q->back = q->back->next;
+    if (q->back == q->front)
+        q->back = q->front = NULL;
+    else
+        q->back = q->back->next;
     free(del_node);
     return process;
 }
@@ -101,14 +112,6 @@ void request_queue_purge(RequestQueue *q)
     free(q);
 }
 
-int **requested;
-int **allocated;
-int *processes_visited;
-int *resources_visited;
-int number_processes;
-int number_resources;
-RequestQueue *request_queues;
-
 void Rag_init(int m, int n)
 {
     number_processes = m;
@@ -128,22 +131,19 @@ void Rag_init(int m, int n)
 
 void Rag_deconstruct()
 {
-    for (int i = 0; i < m; i++)
+    for (int i = 0; i < number_processes; i++)
         free(requested[i]);
     free(requested);
-    for (int i = 0; i < n; i++)
+    for (int i = 0; i < number_resources; i++)
         free(allocated[i]);
     free(allocated);
     free(processes_visited);
     free(resources_visited);
-    for (int i = 0; i < n; i++)
+    for (int i = 0; i < number_resources; i++)
         request_queue_purge(request_queues[i]);
 }
 
-int deadlock_check()
-{
-    return deadlock_check_process(0);
-}
+int deadlock_check_resource(int resource);
 
 int deadlock_check_process(int process)
 {
@@ -154,9 +154,16 @@ int deadlock_check_process(int process)
         if (requested[process][i])
         {
             if (resources_visited[i] == 1)
+            {
+                printf("P%d\n", process);
                 return 1;
+            }
             if (resources_visited[i] == 0)
-                return deadlock_check_resource(i);
+            {
+                int return_value = deadlock_check_resource(i);
+                printf("P%d\n", process);
+                return return_value;
+            }
         }
     }
     processes_visited[process] = 2;
@@ -172,18 +179,32 @@ int deadlock_check_resource(int resource)
         if (allocated[resource][i])
         {
             if (processes_visited[i] == 1)
+            {
+                printf("R%d\n", resource);
                 return 1;
+            }
             if (processes_visited[i] == 0)
-                return deadlock_check_process(i);
+            {
+                int return_value = deadlock_check_process(i);
+                printf("R%d\n", resource);
+                return return_value;
+            }
         }
     }
     resources_visited[resource] = 2;
     return 0;
 }
 
+int deadlock_check()
+{
+    return deadlock_check_process(0);
+}
+
 int Rag_process(int process_id, char request_type, int resource_id)
 {
     state_t current_state;
+    int resource_is_allocated;
+    int i;
     if (process_id >= number_processes || process_id < 0)
     {
         printf("ERROR: %d is not a valid process!\n", process_id);
@@ -198,8 +219,8 @@ int Rag_process(int process_id, char request_type, int resource_id)
     {
         case 'A':
             // find out if resource is allocated
-            int resource_is_allocated = 0;
-            for (int i = 0; i < number_resources; i++)
+            resource_is_allocated = 0;
+            for (i = 0; i < number_resources; i++)
             {
                 if (allocated[resource_id][i])
                 {
@@ -244,7 +265,7 @@ int Rag_process(int process_id, char request_type, int resource_id)
                 if (!request_queue_is_empty(request_queues[resource_id]))
                 {
                     current_state = ALLOC_STATE;
-                    allocated[resoruce_id][request_queue_dequeue(request_queues[resource_id])] = 1;
+                    allocated[resource_id][request_queue_dequeue(request_queues[resource_id])] = 1;
                 }
             }
             else
@@ -261,22 +282,31 @@ int Rag_process(int process_id, char request_type, int resource_id)
     }
 
     // TODO: detect a deadlock
+    int is_deadlock = 0;
     if (deadlock_check())
-        return DEADLOCK;
+        is_deadlock = 1;
+    for (i = 0; i < number_processes; i++)
+        processes_visited[i] = 0;
+    for (i = 0; i < number_resources; i++)
+        resources_visited[i] = 0;
 
+    if (is_deadlock)
+        return DEADLOCK_STATE;
+    else
+        return current_state;
 }
 
 int parse_line(char *line, int linesize, int *process_id, char *request_type, int *resource_id)
 {
-    *process_id = atoi(strtok(line, ","));
-    request_type = strtok(NULL, ",");
-    *resource_id = atoi(strtok(NULL, ","));
+    *process_id = atoi(strtok(line, ", "));
+    *request_type = strtok(NULL, ", ")[0];
+    *resource_id = atoi(strtok(NULL, ", "));
 }
 
 int main(int argc, char** argv){
     int m, n = 0;
 
-    if (argc != 2){
+    if (argc != 3){
         printf("ERROR! NO COMPREHENDO! You must be speaking in another language...\n");
         return -1;
     }
@@ -284,12 +314,9 @@ int main(int argc, char** argv){
     m = atoi(argv[1]);
     n = atoi(argv[2]);
 
-    Rag resource_allocation_graph;
-    Rag_init(&resource_allocation_graph, m, n);
+    Rag_init(m, n);
     char* line = NULL;
     size_t size = 0;
-
-
 
     while (getline(&line, &size, stdin) != -1)
     {
@@ -300,9 +327,13 @@ int main(int argc, char** argv){
         if (parse_line(line, size, &process_id, &request_type, &resource_id) < 0)
         {
             printf("ERROR! WORLD WILL EXPLODE IN 4 MINUTES!\n");
+            Rag_deconstruct();
             return -1;
         }
-        output_result = Rag_process(&resource_allocation_graph, process_id, request_type, resource_id);
+        output_result = Rag_process(process_id, request_type, resource_id);
+
+        int is_deadlock = 0;
+        int is_error = 0;
         switch (output_result)
         {
             case REQUEST_STATE:
@@ -319,16 +350,62 @@ int main(int argc, char** argv){
                 break;
             case DEADLOCK_STATE:
                 printf("ERROR! IT'S THE DEADLOCK! THE DEADLY EMBRACE! OH NO! WHY DID IT EVER COME TO THIS!\n");
-                return 0;
+                is_deadlock = 1;
                 break;
             default:
                 printf("ERROR! SPACETIME RIFT DETECTED, SHUTTING DOWN!\n");
-                return -1;
+                is_error = 1;
                 break;
+        }
+
+        // Start Debug Print Statements
+        printf("%d %c %d\n", process_id, request_type, resource_id);
+        printf("%d processes. %d resources\n", number_processes, number_resources);
+        printf("Requested Matrix:\n");
+        for (int i = 0; i < number_processes; i++)
+        {
+            for (int j = 0; j < number_resources; j++)
+                printf("%d ", requested[i][j]);
+            printf("\n");
+        }
+        printf("\n");
+        printf("Request Queues:\n");
+        for (int i = 0; i < number_resources; i++)
+        {
+            RequestQueueNode *q_node = request_queues[i]->back;
+            while (q_node)
+            {
+                printf("%d ", q_node->process);
+                q_node = q_node->next;
+            }
+            printf("\n");
+        }
+        printf("\n");
+        printf("Allocated Matrix:\n");
+        for (int i = 0; i < number_resources; i++)
+        {
+            for (int j = 0; j < number_processes; j++)
+                printf("%d ", allocated[i][j]);
+            printf("\n");
+        }
+        printf("=============================================\n");
+        printf("\n");
+        // End Debug Print Statements
+        
+        if (is_deadlock)
+        {
+            Rag_deconstruct();
+            return 0;
+        }
+        if (is_error)
+        {
+            Rag_deconstruct();
+            return 1;
         }
     }
     // No deadlock
     printf("No deadlock! Yay!\n");
-
+    
+    Rag_deconstruct();
     return 0;
 }
