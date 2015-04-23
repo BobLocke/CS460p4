@@ -14,12 +14,6 @@ typedef struct _request_queue {
     RequestQueueNode *back;
 } RequestQueue;
 
-typedef enum {REQUEST_STATE,
-              ALLOC_STATE,
-              CANCEL_STATE,
-              DEALLOC_STATE,
-              DEADLOCK_STATE} state_t;
-
 int **requested;
 int **allocated;
 int *processes_visited;
@@ -155,13 +149,14 @@ int deadlock_check_process(int process)
         {
             if (resources_visited[i] == 1)
             {
-                printf("P%d\n", process);
+                printf("P%d ", process);
                 return 1;
             }
             if (resources_visited[i] == 0)
             {
                 int return_value = deadlock_check_resource(i);
-                printf("P%d\n", process);
+                if (return_value)
+                    printf("P%d ", process);
                 return return_value;
             }
         }
@@ -180,13 +175,14 @@ int deadlock_check_resource(int resource)
         {
             if (processes_visited[i] == 1)
             {
-                printf("R%d\n", resource);
+                printf("R%d ", resource);
                 return 1;
             }
             if (processes_visited[i] == 0)
             {
                 int return_value = deadlock_check_process(i);
-                printf("R%d\n", resource);
+                     if (return_value)
+                    printf("R%d ", resource);
                 return return_value;
             }
         }
@@ -202,7 +198,6 @@ int deadlock_check()
 
 int Rag_process(int process_id, char request_type, int resource_id)
 {
-    state_t current_state;
     int resource_is_allocated;
     int i;
     if (process_id >= number_processes || process_id < 0)
@@ -218,6 +213,7 @@ int Rag_process(int process_id, char request_type, int resource_id)
     switch (request_type)
     {
         case 'A':
+        printf("Request p%d --> r%d\n", process_id, resource_id);
             // find out if resource is allocated
             resource_is_allocated = 0;
             for (i = 0; i < number_resources; i++)
@@ -231,15 +227,16 @@ int Rag_process(int process_id, char request_type, int resource_id)
             // allocate or request resource
             if (resource_is_allocated)
             {
-                assert(!requested[process_id][resource_id]);
-                current_state = REQUEST_STATE;
+                if (requested[process_id][resource_id]) return 0;
+                //current_state = REQUEST_STATE;
                 requested[process_id][resource_id] = 1;
                 request_queue_enqueue(request_queues[resource_id], process_id);
             }
             else
             {
-                assert(!allocated[resource_id][process_id]);
-                current_state = ALLOC_STATE;
+                if (allocated[resource_id][process_id]) return 0;
+                //current_state = ALLOC_STATE;
+                printf("Alloc p%d <-- r%d\n", process_id, resource_id);
                 allocated[resource_id][process_id] = 1;
                 if (requested[process_id][resource_id])
                 {
@@ -252,19 +249,22 @@ int Rag_process(int process_id, char request_type, int resource_id)
         case 'D':
             if (requested[process_id][resource_id])
             {
-                current_state = CANCEL_STATE;
-                assert(!allocated[resource_id][process_id]);
+                //current_state = CANCEL_STATE;
+                printf("Cancel p%d -/-> r%d\n", process_id, resource_id);
+                if (allocated[resource_id][process_id]) return 0;
                 requested[process_id][resource_id] = 0;
                 request_queue_remove(request_queues[resource_id],
                                      process_id);
             }
             else if (allocated[resource_id][process_id])
             {
-                current_state = DEALLOC_STATE;
+                //current_state = DEALLOC_STATE;
+                printf("Dealloc p%d <-/- r%d\n", process_id, resource_id);
                 allocated[resource_id][process_id] = 0;
                 if (!request_queue_is_empty(request_queues[resource_id]))
                 {
-                    current_state = ALLOC_STATE;
+                    //current_state = ALLOC_STATE;
+                    printf("Alloc p%d <-- r%d\n", process_id, resource_id);
                     allocated[resource_id][request_queue_dequeue(request_queues[resource_id])] = 1;
                 }
             }
@@ -291,12 +291,12 @@ int Rag_process(int process_id, char request_type, int resource_id)
         resources_visited[i] = 0;
 
     if (is_deadlock)
-        return DEADLOCK_STATE;
+        return -1;
     else
-        return current_state;
+        return 0;
 }
 
-int parse_line(char *line, int linesize, int *process_id, char *request_type, int *resource_id)
+void parse_line(char *line, int linesize, int *process_id, char *request_type, int *resource_id)
 {
     *process_id = atoi(strtok(line, ", "));
     *request_type = strtok(NULL, ", ")[0];
@@ -307,12 +307,22 @@ int main(int argc, char** argv){
     int m, n = 0;
 
     if (argc != 3){
-        printf("ERROR! NO COMPREHENDO! You must be speaking in another language...\n");
+        printf("ERROR! INCORRECT NUMBER OF ARGUMENTS! START MAKING SENSE!\n");
         return -1;
     }
 
     m = atoi(argv[1]);
     n = atoi(argv[2]);
+
+    if (m <= 0){
+        printf("ERROR! PROCESSES MUST BE MORE THAN 0! SHUT IT DOWN!\n");
+        return -1;
+    }
+
+    if (m <= 0){
+        printf("ERROR! RESOURCEES MUST BE MORE THAN 0! YOU WILL REGRET THIS!\n");
+        return -1;
+    }
 
     Rag_init(m, n);
     char* line = NULL;
@@ -324,29 +334,31 @@ int main(int argc, char** argv){
         char request_type;
         int resource_id;
         int output_result;
-        if (parse_line(line, size, &process_id, &request_type, &resource_id) < 0)
-        {
-            printf("ERROR! WORLD WILL EXPLODE IN 4 MINUTES!\n");
-            Rag_deconstruct();
-            return -1;
-        }
+        parse_line(line, size, &process_id, &request_type, &resource_id);
         output_result = Rag_process(process_id, request_type, resource_id);
 
         int is_deadlock = 0;
         int is_error = 0;
+
+        if (output_result == -1){
+                printf("\nERROR! IT'S THE DEADLOCK! THE DEADLY EMBRACE! OH NO! WHY DID IT EVER COME TO THIS!\n");
+                Rag_deconstruct();
+                return 0;
+            }
+        /*
         switch (output_result)
         {
             case REQUEST_STATE:
-                printf("Request...\n");
+                printf("Request p%d --> r%d\n", process_id, resource_id);
                 break;
             case ALLOC_STATE:
-                printf("Alloc...\n");
+                printf("Alloc p%d --> r%d\n", process_id, resource_id);
                 break;
             case CANCEL_STATE:
-                printf("Cancel...\n");
+                printf("Cancel p%d --> r%d\n", process_id, resource_id);
                 break;
             case DEALLOC_STATE:
-                printf("Dealloc...\n");
+                printf("Dealloc p%d --> r%d\n", process_id, resource_id);
                 break;
             case DEADLOCK_STATE:
                 printf("ERROR! IT'S THE DEADLOCK! THE DEADLY EMBRACE! OH NO! WHY DID IT EVER COME TO THIS!\n");
@@ -357,7 +369,9 @@ int main(int argc, char** argv){
                 is_error = 1;
                 break;
         }
+        */
 
+        /*
         // Start Debug Print Statements
         printf("%d %c %d\n", process_id, request_type, resource_id);
         printf("%d processes. %d resources\n", number_processes, number_resources);
@@ -392,16 +406,7 @@ int main(int argc, char** argv){
         printf("\n");
         // End Debug Print Statements
         
-        if (is_deadlock)
-        {
-            Rag_deconstruct();
-            return 0;
-        }
-        if (is_error)
-        {
-            Rag_deconstruct();
-            return 1;
-        }
+        */
     }
     // No deadlock
     printf("No deadlock! Yay!\n");
